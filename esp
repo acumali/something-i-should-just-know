@@ -97,7 +97,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 --------------------------------------------------------------------
--- 2. PLAYER ESP
+-- 2. PLAYER ESP (WITH EMPIRE / NATION TEAM CHECK)
 --------------------------------------------------------------------
 local function clearPlayerESP()
     for _, highlight in pairs(playerHighlights) do
@@ -110,6 +110,11 @@ end
 
 local function applyPlayerESP(player)
     if player == LocalPlayer then return end
+
+    -- Team Check: Do not highlight teammates on the same team
+    if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+        return
+    end
 
     local char = player.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
@@ -127,13 +132,19 @@ local function applyPlayerESP(player)
 
     local classVal = char:FindFirstChild("class")
     local isElite = char:FindFirstChild("elitekit")
+    local teamName = player.Team and player.Team.Name:lower() or ""
 
+    -- Color Prioritization: Dread > Specialist > Empire / Nation Team > Standard Enemy
     if classVal and tostring(classVal.Value):lower() == "dread" then
         highlight.FillColor = Color3.fromRGB(255, 140, 0) -- Dread (Orange)
     elseif isElite then
         highlight.FillColor = Color3.fromRGB(0, 255, 0) -- Specialist (Green)
+    elseif teamName:find("empire") then
+        highlight.FillColor = Color3.fromRGB(255, 50, 50) -- Empire Team (Red)
+    elseif teamName:find("nation") then
+        highlight.FillColor = Color3.fromRGB(50, 150, 255) -- Nation Team (Blue)
     else
-        highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Standard (Red)
+        highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Standard Enemy (Red)
     end
 
     highlight.Parent = char
@@ -195,19 +206,26 @@ end
 --------------------------------------------------------------------
 -- 4. EVENT LISTENERS & KEYBINDS
 --------------------------------------------------------------------
-Players.PlayerAdded:Connect(function(player)
+local function setupPlayerListeners(player)
     player.CharacterAdded:Connect(function()
         task.wait(0.5)
         if playerEspEnabled then applyPlayerESP(player) end
     end)
-end)
-
-for _, player in ipairs(Players:GetPlayers()) do
-    player.CharacterAdded:Connect(function()
-        task.wait(0.5)
-        if playerEspEnabled then applyPlayerESP(player) end
+    player:GetPropertyChangedSignal("Team"):Connect(function()
+        if playerEspEnabled then refreshPlayerESP() end
     end)
 end
+
+Players.PlayerAdded:Connect(setupPlayerListeners)
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        setupPlayerListeners(player)
+    end
+end
+
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+    if playerEspEnabled then refreshPlayerESP() end
+end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
