@@ -1,0 +1,227 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- GUI Container Protection
+local function getGuiParent()
+    if gethui then
+        return gethui()
+    elseif syn and syn.protect_gui then
+        local gui = Instance.new("Folder")
+        syn.protect_gui(gui)
+        gui.Parent = CoreGui
+        return gui
+    else
+        return CoreGui
+    end
+end
+
+-- Toggle States
+local playerEspEnabled = false
+local kitAndHpEnabled = false
+
+-- Element Tracking
+local playerHighlights = {}
+local kitAdornments = {}
+
+--------------------------------------------------------------------
+-- 1. HEALTH BAR GUI
+--------------------------------------------------------------------
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MinimalHealthHUD"
+screenGui.ResetOnSpawn = false
+screenGui.Enabled = false
+screenGui.Parent = getGuiParent()
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 22)
+frame.Position = UDim2.new(0.5, -110, 0.85, 0)
+frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 6)
+corner.Parent = frame
+
+local fill = Instance.new("Frame")
+fill.Size = UDim2.new(1, -4, 1, -4)
+fill.Position = UDim2.new(0, 2, 0, 2)
+fill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+fill.BorderSizePixel = 0
+fill.Parent = frame
+
+local fillCorner = Instance.new("UICorner")
+fillCorner.CornerRadius = UDim.new(0, 4)
+fillCorner.Parent = fill
+
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(1, 0, 1, 0)
+textLabel.BackgroundTransparency = 1
+textLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+textLabel.TextScaled = true
+textLabel.Font = Enum.Font.SourceSansBold
+textLabel.Text = "100 / 100"
+textLabel.Parent = frame
+
+local function updateHealthBar()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    local hp = math.clamp(humanoid.Health, 0, humanoid.MaxHealth)
+    local maxHp = humanoid.MaxHealth
+    local ratio = maxHp > 0 and (hp / maxHp) or 0
+
+    fill.Size = UDim2.new(ratio, -4, 1, -4)
+    textLabel.Text = string.format("%d / %d", math.floor(hp), math.floor(maxHp))
+
+    if ratio > 0.75 then
+        fill.BackgroundColor3 = Color3.fromRGB(255, 255, 255) -- White
+    elseif ratio > 0.50 then
+        fill.BackgroundColor3 = Color3.fromRGB(255, 140, 0) -- Orange
+    else
+        fill.BackgroundColor3 = Color3.fromRGB(255, 50, 50)  -- Red
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    if kitAndHpEnabled then
+        updateHealthBar()
+    end
+end)
+
+--------------------------------------------------------------------
+-- 2. PLAYER ESP
+--------------------------------------------------------------------
+local function clearPlayerESP()
+    for _, highlight in pairs(playerHighlights) do
+        if highlight and highlight.Parent then
+            highlight:Destroy()
+        end
+    end
+    table.clear(playerHighlights)
+end
+
+local function applyPlayerESP(player)
+    if player == LocalPlayer then return end
+
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+    if playerHighlights[char] then
+        playerHighlights[char]:Destroy()
+    end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "PlayerESP"
+    highlight.Adornee = char
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0.2
+
+    local classVal = char:FindFirstChild("class")
+    local isElite = char:FindFirstChild("elitekit")
+
+    if classVal and tostring(classVal.Value):lower() == "dread" then
+        highlight.FillColor = Color3.fromRGB(255, 140, 0) -- Dread (Orange)
+    elseif isElite then
+        highlight.FillColor = Color3.fromRGB(0, 255, 0) -- Specialist (Green)
+    else
+        highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Standard (Red)
+    end
+
+    highlight.Parent = char
+    playerHighlights[char] = highlight
+end
+
+local function refreshPlayerESP()
+    clearPlayerESP()
+    if not playerEspEnabled then return end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            applyPlayerESP(player)
+        end
+    end
+end
+
+--------------------------------------------------------------------
+-- 3. SHOCK / ELITE KIT ESP
+--------------------------------------------------------------------
+local function clearKitESP()
+    for _, adornment in pairs(kitAdornments) do
+        if adornment and adornment.Parent then
+            adornment:Destroy()
+        end
+    end
+    table.clear(kitAdornments)
+end
+
+local function refreshKitESP()
+    clearKitESP()
+    if not kitAndHpEnabled then return end
+
+    for _, desc in ipairs(Workspace:GetDescendants()) do
+        if desc:IsA("BillboardGui") and desc.Name == "eliteicon" then
+            local parentPart = desc.Parent
+            if parentPart and parentPart:IsA("BasePart") then
+                local box = Instance.new("BoxHandleAdornment")
+                box.Name = "KitESP"
+                box.Adornee = parentPart
+                box.Size = parentPart.Size + Vector3.new(0.2, 0.2, 0.2)
+                box.AlwaysOnTop = true
+                box.ZIndex = 5
+                box.Transparency = 0.4
+
+                if parentPart.Name:lower():find("_kit1") or desc.Parent.Name:lower():find("_kit1") then
+                    box.Color3 = Color3.fromRGB(0, 255, 0) -- Kit 1 (Green)
+                else
+                    box.Color3 = Color3.fromRGB(170, 0, 255) -- Other Kits (Purple)
+                end
+
+                box.Parent = parentPart
+                table.insert(kitAdornments, box)
+            end
+        end
+    end
+end
+
+--------------------------------------------------------------------
+-- 4. EVENT LISTENERS & KEYBINDS
+--------------------------------------------------------------------
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if playerEspEnabled then applyPlayerESP(player) end
+    end)
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if playerEspEnabled then applyPlayerESP(player) end
+    end)
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+
+    -- "[" Key: Toggle Shock Kit ESP and Custom HP Bar
+    if input.KeyCode == Enum.KeyCode.LeftBracket then
+        kitAndHpEnabled = not kitAndHpEnabled
+        screenGui.Enabled = kitAndHpEnabled
+        refreshKitESP()
+    end
+
+    -- "]" Key: Toggle Player ESP
+    if input.KeyCode == Enum.KeyCode.RightBracket then
+        playerEspEnabled = not playerEspEnabled
+        refreshPlayerESP()
+    end
+end)
