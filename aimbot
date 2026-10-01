@@ -139,7 +139,7 @@ local getTarget = function(origin: Vector3)
     return cPart, offset;
 end;
 
-loadstring(game:HttpGet("https://sneekysscripts.uk/Scripts/UIs/silent_aim.luau"))()(getgenv().sneeky_fov_size or 300, getTarget);
+loadstring(game:HttpGet("https://raw.githubusercontent.com/acumali/something-i-should-just-know/refs/heads/main/visibility"))()(getgenv().sneeky_fov_size or 300, getTarget);
 
 local old; old = clonefunction(hookfunction(rawget(bfuncs, "raycastline"), newcclosure(function(_, args)
     if rawget(args, "bullet") and rawget(args, "point") and rawget(args, "destination") then
