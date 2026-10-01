@@ -24,7 +24,7 @@ if not s then
     return warn(executor .. " returned an error while trying to require RS.shared.bFunctions:\n" .. bfuncs);
 end;
 
-local stats = loadstring(game:HttpGet("https://github.com/acumali/something-i-should-just-know/blob/main/shh%201.0"))();
+local stats = loadstring(game:HttpGet("https://raw.githubusercontent.com/acumali/something-i-should-just-know/refs/heads/main/shh%201.0"))();
 local bodyparts = {
     "Right Arm",
     "Left Arm",
