@@ -49,4 +49,6 @@ return {
 	["'The Reaper'"] = 0,
 
 	["'Honour' Duty Pistol"] = 0,
+    ["'Okhotnik' Hunting Crossbow"] = 0,
+    ["Throwing Axe"] = 0,
 };
