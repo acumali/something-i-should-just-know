@@ -43,6 +43,7 @@ local rp = RaycastParams.new();
 rp.FilterType = Enum.RaycastFilterType.Exclude;
 rp.IgnoreWater = true;
 
+-- Speed dictionary for projectile math
 local PROJECTILE_SPEEDS = {
     ["okhotnik"] = 450,
     ["crossbow"] = 450,
@@ -116,6 +117,21 @@ local getTarget = function(origin: Vector3)
         local pos, onScreen = cam:WorldToViewportPoint(tPart.Position);
         if not onScreen then continue; end;
 
+        if getgenv().sneeky_wallcheck then
+            local v, nTPart, o = isVisible(tPart, origin);
+            if not v then
+                v, nTPart, o = isVisible(char:FindFirstChild("Torso") or char.PrimaryPart, origin);
+                if not v then
+                    for _, _v in ipairs(bodyparts) do
+                        v, nTPart, o = isVisible(char:FindFirstChild(_v), origin);
+                        if v then break; end;
+                    end;
+                    if not v then continue; end;
+                end;
+            end;
+            if nTPart then tPart = nTPart; end;
+        end;
+
         local distance = (Vector2.new(pos.X, pos.Y) - UIS:GetMouseLocation()).Magnitude;
         if distance < cDistance then
             cPart = tPart;
@@ -129,37 +145,53 @@ end;
 
 loadstring(game:HttpGet("https://raw.githubusercontent.com/acumali/something-i-should-just-know/refs/heads/main/visibility"))()(getgenv().sneeky_fov_size or 300, getTarget);
 
--- Hook standard raycast line for firearms
-local oldRaycast; oldRaycast = clonefunction(hookfunction(rawget(bfuncs, "raycastline"), newcclosure(function(_, args)
+-- 1. Hook bFunctions.raycastline for Standard Hitscan Firearms
+local old; old = clonefunction(hookfunction(rawget(bfuncs, "raycastline"), newcclosure(function(_, args)
     if rawget(args, "bullet") and rawget(args, "point") and rawget(args, "destination") then
         local c, offset = getTarget(rawget(args, "point"));
         if c then
             local _args = args;
-            local origin = _args.point;
             local pos = c.CFrame;
-            _args.destination = pos.Position - origin;
-            return oldRaycast(_, _args);
+            _args.destination = (offset and pos:PointToWorldSpace(Vector3.new(0, c.Size.Y/2, 0)) or pos.Position) - _args.point;
+            return old(_, _args);
         end;
     end;
-    return oldRaycast(_, args);
+    return old(_, args);
 end)));
 
--- Hook Jolt / Remotes or Projectile Instantiation functions if available in bfuncs
-if rawget(bfuncs, "fireprojectile") or rawget(bfuncs, "shoot") then
-    local targetFuncKey = rawget(bfuncs, "fireprojectile") and "fireprojectile" or "shoot";
-    local oldProj; oldProj = clonefunction(hookfunction(rawget(bfuncs, targetFuncKey), newcclosure(function(self, ...))
-        local args = {...};
-        local origin = args[1] or (plr.Character and plr.Character.PrimaryPart.Position) or workspace.CurrentCamera.CFrame.Position;
-        local c, _ = getTarget(origin);
-        if c then
-            local gun = plr.Character and plr.Character:FindFirstChildOfClass("Tool");
-            local speed = getWeaponSpeed(gun and gun.Name or "");
-            local predPos = predictTrajectory(origin, c, speed);
-            -- Overwrite target vector/direction argument passed to the projectile function
-            args[2] = (predPos - origin).Unit * speed; 
-        end;
-        return oldProj(self, unpack(args));
-    end));
-end;
+-- 2. Hook __namecall to intercept Jolt Network Remotes (Crossbows & Thrown Weapons)
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    
+    if (method == "FireServer" or method == "FireUnreliable" or method == "fireServer") then
+        local remoteName = self.Name:lower()
+        if remoteName:find("jolt") or remoteName:find("shoot") or remoteName:find("throw") or remoteName:find("fire") then
+            local gun = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
+            local origin = cam.CFrame.Position
+            local c = getTarget(origin)
+            
+            if c and gun then
+                local gunName = gun.Name
+                local speed = getWeaponSpeed(gunName)
+                local predictedPos = predictTrajectory(origin, c, speed)
+                local targetDir = (predictedPos - origin).Unit
+                
+                -- Replace Vector3 arguments inside the remote payload with our calculated trajectory
+                for i, arg in ipairs(args) do
+                    if typeof(arg) == "Vector3" then
+                        args[i] = targetDir
+                    elseif typeof(arg) == "CFrame" then
+                        args[i] = CFrame.lookAt(arg.Position, predictedPos)
+                    end
+                end
+                return oldNamecall(self, unpack(args))
+            end
+        end
+    end
+    
+    return oldNamecall(self, ...)
+end))
 
-SG["success"]("Enhanced Silent Aim (with Jolt Projectile & Crossbow support) loaded!");
+SG["success"]("Silent Aim fixed & loaded successfully!");
