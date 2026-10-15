@@ -43,11 +43,11 @@ local rp = RaycastParams.new();
 rp.FilterType = Enum.RaycastFilterType.Exclude;
 rp.IgnoreWater = true;
 
--- Speed dictionary for projectile math
+-- Estimated speeds for projectile leading (studs per second)
 local PROJECTILE_SPEEDS = {
     ["okhotnik"] = 450,
     ["crossbow"] = 450,
-    ["axe"] = 250,
+    ["axe"] = 280,
     ["throwable"] = 250,
     ["default"] = 350
 };
@@ -62,6 +62,7 @@ local function getWeaponSpeed(gunName: string): number
     return PROJECTILE_SPEEDS["default"]
 end
 
+-- Calculates predicted target position (Lead distance + Bullet drop)
 local function predictTrajectory(origin: Vector3, targetPart: BasePart, projSpeed: number): Vector3
     local targetChar = targetPart.Parent
     local targetRoot = targetChar and (targetChar:FindFirstChild("HumanoidRootPart") or targetChar:FindFirstChild("Torso") or targetPart)
@@ -70,8 +71,11 @@ local function predictTrajectory(origin: Vector3, targetPart: BasePart, projSpee
     local dist = (targetPart.Position - origin).Magnitude
     local timeOfFlight = dist / math.max(projSpeed, 1)
     
+    -- Target position lead
     local predictedPos = targetPart.Position + (velocity * timeOfFlight)
-    local gravity = workspace.Gravity
+    
+    -- Gravity drop compensation
+    local gravity = workspace.Gravity or 196.2
     local dropCompensation = 0.5 * gravity * (timeOfFlight ^ 2)
     
     return predictedPos + Vector3.new(0, dropCompensation, 0)
@@ -93,6 +97,16 @@ local isVisible = function(part: BasePart, origin: Vector3): (boolean, Instance?
     if not result then return true, nil, false; end;
 
     if result.Instance:IsDescendantOf(part.Parent) then
+        if (result.Instance.Parent.Name == "vanguardshield1" and result.Instance.Parent:FindFirstChild("hitbox")) or (result.Instance.Parent.Parent.Name == "vanguardshield1" and result.Instance.Parent.Parent:FindFirstChild("hitbox")) then
+            local ins = result.Instance.Parent.Name == "vanguardshield1" and result.Instance.Parent or result.Instance.Parent.Parent;
+            local sh = ins:FindFirstChild("special") and ins.special:FindFirstChild("topshield");
+            if sh and sh:FindFirstChild("health") and sh.health.Value > 0 then
+                local dp = sh:FindFirstChild("damagepart");
+                return true, dp, false;
+            else
+                return true, part.Parent:FindFirstChild("HeadHitbox"), true;
+            end;
+        end;
         return true, result.Instance, false;
     end;
 
@@ -111,16 +125,35 @@ local getTarget = function(origin: Vector3)
     for _, char: Model in next, eFolder:GetChildren() do
         if char:FindFirstChild("Humanoid") and char.Humanoid.Health <= 0 then continue; end;
 
-        local tPart: BasePart? = char:FindFirstChild("HeadHitbox") or char:FindFirstChild("Torso") or char.PrimaryPart;
-        if not tPart then continue; end;
+        local tPart: BasePart?
+        local root = char:FindFirstChild("Torso") or char.PrimaryPart;
+        local head = char:FindFirstChild("HeadHitbox") or root;
+        if cm.Value or not char:FindFirstChild("helmet") or char:FindFirstChild("helmetgone") then
+            tPart = head;
+        else
+            local pl = stats[gun.Name] or 2;
+            local class: string? = char:FindFirstChild("class") and char.class.Value;
+            if not pl or not class then
+                tPart = root;
+            else
+                if class == "lancer" then
+                    tPart = (pl == 5) and head or root;
+                elseif class == "vanguard" then
+                    tPart = (pl >= 4) and head or root;
+                else
+                    tPart = (pl >= 4) and head or root;
+                end;
+            end;
+        end;
 
+        if not tPart then continue; end;
         local pos, onScreen = cam:WorldToViewportPoint(tPart.Position);
         if not onScreen then continue; end;
 
         if getgenv().sneeky_wallcheck then
             local v, nTPart, o = isVisible(tPart, origin);
             if not v then
-                v, nTPart, o = isVisible(char:FindFirstChild("Torso") or char.PrimaryPart, origin);
+                v, nTPart, o = isVisible(root, origin);
                 if not v then
                     for _, _v in ipairs(bodyparts) do
                         v, nTPart, o = isVisible(char:FindFirstChild(_v), origin);
@@ -135,7 +168,7 @@ local getTarget = function(origin: Vector3)
         local distance = (Vector2.new(pos.X, pos.Y) - UIS:GetMouseLocation()).Magnitude;
         if distance < cDistance then
             cPart = tPart;
-            offset = false;
+            offset = o;
             cDistance = distance;
         end;
     end;
@@ -145,53 +178,32 @@ end;
 
 loadstring(game:HttpGet("https://raw.githubusercontent.com/acumali/something-i-should-just-know/refs/heads/main/visibility"))()(getgenv().sneeky_fov_size or 300, getTarget);
 
--- 1. Hook bFunctions.raycastline for Standard Hitscan Firearms
+-- Hook raycastline only (Safe for Jolt Physics)
 local old; old = clonefunction(hookfunction(rawget(bfuncs, "raycastline"), newcclosure(function(_, args)
     if rawget(args, "bullet") and rawget(args, "point") and rawget(args, "destination") then
         local c, offset = getTarget(rawget(args, "point"));
         if c then
             local _args = args;
-            local pos = c.CFrame;
-            _args.destination = (offset and pos:PointToWorldSpace(Vector3.new(0, c.Size.Y/2, 0)) or pos.Position) - _args.point;
+            local origin = _args.point;
+            local gun = plr.Character and plr.Character:FindFirstChildOfClass("Tool");
+            local gunName = gun and gun.Name or "";
+
+            local targetPos;
+            -- Check if holding Okhotnik Crossbow or Thrown Weapon
+            if gunName:lower():find("okhotnik") or gunName:lower():find("crossbow") or gunName:lower():find("axe") or gunName:lower():find("throw") then
+                local speed = getWeaponSpeed(gunName);
+                targetPos = predictTrajectory(origin, c, speed);
+            else
+                -- Normal firearms (Hitscan)
+                local pos = c.CFrame;
+                targetPos = (offset and pos:PointToWorldSpace(Vector3.new(0, c.Size.Y/2, 0)) or pos.Position);
+            end;
+
+            _args.destination = targetPos - origin;
             return old(_, _args);
         end;
     end;
     return old(_, args);
 end)));
 
--- 2. Hook __namecall to intercept Jolt Network Remotes (Crossbows & Thrown Weapons)
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-    
-    if (method == "FireServer" or method == "FireUnreliable" or method == "fireServer") then
-        local remoteName = self.Name:lower()
-        if remoteName:find("jolt") or remoteName:find("shoot") or remoteName:find("throw") or remoteName:find("fire") then
-            local gun = plr.Character and plr.Character:FindFirstChildOfClass("Tool")
-            local origin = cam.CFrame.Position
-            local c = getTarget(origin)
-            
-            if c and gun then
-                local gunName = gun.Name
-                local speed = getWeaponSpeed(gunName)
-                local predictedPos = predictTrajectory(origin, c, speed)
-                local targetDir = (predictedPos - origin).Unit
-                
-                -- Replace Vector3 arguments inside the remote payload with our calculated trajectory
-                for i, arg in ipairs(args) do
-                    if typeof(arg) == "Vector3" then
-                        args[i] = targetDir
-                    elseif typeof(arg) == "CFrame" then
-                        args[i] = CFrame.lookAt(arg.Position, predictedPos)
-                    end
-                end
-                return oldNamecall(self, unpack(args))
-            end
-        end
-    end
-    
-    return oldNamecall(self, ...)
-end))
-
-SG["success"]("Silent Aim fixed & loaded successfully!");
+SG["success"]("Silent Aim loaded cleanly without buffer errors!");
