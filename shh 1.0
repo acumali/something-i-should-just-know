@@ -3,7 +3,7 @@ return {
 	["'Heavens Door'"] = 0,
 	["'Hells Gate'"] = 0,
 
-	["'Judgement' Breech Rifle"] = 0,
+	["'Judgement' Breech Rifle"] = 4,
 	["'Kingslayer' Percussion Revolver"] = 5,
 
 	["'Volk' Sniper Rifle"] = 0,
