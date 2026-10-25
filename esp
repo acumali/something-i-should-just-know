@@ -25,11 +25,11 @@ local playerEspEnabled = false
 local kitAndHpEnabled = false
 
 -- Element Tracking
-local playerHighlights = {}
+local playerEspData = {} -- Stores Highlight, BillboardGui, Fill frame, and Humanoid
 local kitAdornments = {}
 
 --------------------------------------------------------------------
--- 1. HEALTH BAR GUI
+-- 1. LOCAL PLAYER HEALTH BAR GUI
 --------------------------------------------------------------------
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MinimalHealthHUD"
@@ -90,39 +90,40 @@ local function updateHealthBar()
     end
 end
 
-RunService.RenderStepped:Connect(function()
-    if kitAndHpEnabled then
-        updateHealthBar()
-    end
-end)
-
 --------------------------------------------------------------------
--- 2. PLAYER ESP (WITH EMPIRE / NATION TEAM CHECK)
+-- 2. PLAYER ESP & ENEMY MINI HP BAR
 --------------------------------------------------------------------
 local function clearPlayerESP()
-    for _, highlight in pairs(playerHighlights) do
-        if highlight and highlight.Parent then
-            highlight:Destroy()
+    for _, data in pairs(playerEspData) do
+        if data.Highlight and data.Highlight.Parent then
+            data.Highlight:Destroy()
+        end
+        if data.Gui and data.Gui.Parent then
+            data.Gui:Destroy()
         end
     end
-    table.clear(playerHighlights)
+    table.clear(playerEspData)
 end
 
 local function applyPlayerESP(player)
     if player == LocalPlayer then return end
 
-    -- Team Check: Do not highlight teammates on the same team
+    -- Team Check: Do not highlight teammates
     if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
         return
     end
 
     local char = player.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
 
-    if playerHighlights[char] then
-        playerHighlights[char]:Destroy()
+    if playerEspData[char] then
+        if playerEspData[char].Highlight then playerEspData[char].Highlight:Destroy() end
+        if playerEspData[char].Gui then playerEspData[char].Gui:Destroy() end
     end
 
+    -- Highlight Outline
     local highlight = Instance.new("Highlight")
     highlight.Name = "PlayerESP"
     highlight.Adornee = char
@@ -134,7 +135,6 @@ local function applyPlayerESP(player)
     local isElite = char:FindFirstChild("elitekit")
     local teamName = player.Team and player.Team.Name:lower() or ""
 
-    -- Color Prioritization: Dread > Specialist > Empire / Nation Team > Standard Enemy
     if classVal and tostring(classVal.Value):lower() == "dread" then
         highlight.FillColor = Color3.fromRGB(255, 140, 0) -- Dread (Orange)
     elseif isElite then
@@ -146,9 +146,50 @@ local function applyPlayerESP(player)
     else
         highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Standard Enemy (Red)
     end
-
     highlight.Parent = char
-    playerHighlights[char] = highlight
+
+    -- Tiny Enemy HP Bar (BillboardGui above head)
+    local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+    local bgGui, fillBar
+    if head then
+        bgGui = Instance.new("BillboardGui")
+        bgGui.Name = "EnemyHpBar"
+        bgGui.Adornee = head
+        bgGui.Size = UDim2.new(0, 36, 0, 5) -- Really small size
+        bgGui.StudsOffset = Vector3.new(0, 2.2, 0)
+        bgGui.AlwaysOnTop = true
+
+        local bgFrame = Instance.new("Frame")
+        bgFrame.Size = UDim2.new(1, 0, 1, 0)
+        bgFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        bgFrame.BorderSizePixel = 0
+        bgFrame.Parent = bgGui
+
+        local bgCorner = Instance.new("UICorner")
+        bgCorner.CornerRadius = UDim.new(0, 2)
+        bgCorner.Parent = bgFrame
+
+        fillBar = Instance.new("Frame")
+        fillBar.Name = "Fill"
+        fillBar.Size = UDim2.new(1, -2, 1, -2)
+        fillBar.Position = UDim2.new(0, 1, 0, 1)
+        fillBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        fillBar.BorderSizePixel = 0
+        fillBar.Parent = bgFrame
+
+        local fillCorner = Instance.new("UICorner")
+        fillCorner.CornerRadius = UDim.new(0, 1)
+        fillCorner.Parent = fillBar
+
+        bgGui.Parent = getGuiParent()
+    end
+
+    playerEspData[char] = {
+        Highlight = highlight,
+        Gui = bgGui,
+        Fill = fillBar,
+        Humanoid = humanoid
+    }
 end
 
 local function refreshPlayerESP()
@@ -190,7 +231,7 @@ local function refreshKitESP()
                 box.ZIndex = 5
                 box.Transparency = 0.4
 
-                if parentPart.Name:lower():find("_kit1") and not "_kit10"
+                if parentPart.Name:lower():find("_kit1") then
                     box.Color3 = Color3.fromRGB(0, 255, 0) -- Kit 1 (Green)
                 else
                     box.Color3 = Color3.fromRGB(170, 0, 255) -- Other Kits (Purple)
@@ -204,7 +245,44 @@ local function refreshKitESP()
 end
 
 --------------------------------------------------------------------
--- 4. EVENT LISTENERS & KEYBINDS
+-- 4. RENDERSTEPPED LOOP (LIVE UPDATES)
+--------------------------------------------------------------------
+RunService.RenderStepped:Connect(function()
+    -- Update local health HUD if enabled
+    if kitAndHpEnabled then
+        updateHealthBar()
+    end
+
+    -- Update enemy mini HP bars in real-time
+    if playerEspEnabled then
+        for char, data in pairs(playerEspData) do
+            if char and char.Parent and data.Humanoid and data.Humanoid.Parent then
+                local hp = math.clamp(data.Humanoid.Health, 0, data.Humanoid.MaxHealth)
+                local maxHp = data.Humanoid.MaxHealth
+                local ratio = maxHp > 0 and (hp / maxHp) or 0
+
+                data.Fill.Size = UDim2.new(ratio, -2, 1, -2)
+
+                -- Color shift based on enemy HP percentage
+                if ratio > 0.6 then
+                    data.Fill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)     -- Green
+                elseif ratio > 0.3 then
+                    data.Fill.BackgroundColor3 = Color3.fromRGB(255, 165, 0)  -- Orange
+                else
+                    data.Fill.BackgroundColor3 = Color3.fromRGB(255, 50, 50)   -- Red
+                end
+            else
+                -- Clean up if target dies or leaves
+                if data.Gui then data.Gui:Destroy() end
+                if data.Highlight then data.Highlight:Destroy() end
+                playerEspData[char] = nil
+            end
+        end
+    end
+end)
+
+--------------------------------------------------------------------
+-- 5. EVENT LISTENERS & KEYBINDS
 --------------------------------------------------------------------
 local function setupPlayerListeners(player)
     player.CharacterAdded:Connect(function()
@@ -224,20 +302,22 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-    if playerEspEnabled then refreshPlayerESP() end
+    if playerEspStateChanged or playerEspEnabled then
+        refreshPlayerESP()
+    end
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
 
-    -- "[" Key: Toggle Shock Kit ESP and Custom HP Bar
+    -- "[" Key: Toggle Shock Kit ESP and Custom Local HP Bar
     if input.KeyCode == Enum.KeyCode.LeftBracket then
         kitAndHpEnabled = not kitAndHpEnabled
         screenGui.Enabled = kitAndHpEnabled
         refreshKitESP()
     end
 
-    -- "]" Key: Toggle Player ESP
+    -- "]` Key: Toggle Player ESP + Enemy Mini HP Bars
     if input.KeyCode == Enum.KeyCode.RightBracket then
         playerEspEnabled = not playerEspEnabled
         refreshPlayerESP()
