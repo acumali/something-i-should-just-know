@@ -1,10 +1,10 @@
 return {
-	["Anti-Materiel Rifle"] = 0,
-	["'Heavens Door'"] = 0,
-	["'Hells Gate'"] = 0,
+	["Anti-Materiel Rifle"] = 5,
+	["'Heavens Door'"] = 5,
+	["'Hells Gate'"] = 5,
 
 	["'Judgement' Breech Rifle"] = 4,
-	["'Kingslayer' Percussion Revolver"] = 5,
+	["'Kingslayer' Percussion Revolver"] = 4,
 
 	["'Volk' Sniper Rifle"] = 0,
 	["'Prince' Long Rifle"] = 0,
