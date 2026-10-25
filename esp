@@ -3,7 +3,6 @@ local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
-local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -26,9 +25,9 @@ local playerEspEnabled = false
 local kitAndHpEnabled = false
 local menuVisible = true
 
--- Adjustable Transparency Values
-local espFillTransparency = 0.5
-local espOutlineTransparency = 0.2
+-- Subtle Default Transparencies (Much less distracting)
+local espFillTransparency = 0.82
+local espOutlineTransparency = 0.4
 
 -- Element Tracking
 local playerHighlights = {}
@@ -44,92 +43,120 @@ screenGui.Parent = getGuiParent()
 
 -- Main Window Frame
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 280, 0, 340)
+mainFrame.Size = UDim2.new(0, 260, 0, 360)
 mainFrame.Position = UDim2.new(0.05, 0, 0.15, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
 
 local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 8)
+mainCorner.CornerRadius = UDim.new(0, 10)
 mainCorner.Parent = mainFrame
 
--- Top Bar / Title
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(45, 45, 55)
+mainStroke.Thickness = 1
+mainStroke.Parent = mainFrame
+
+-- Title
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 40)
+titleLabel.Size = UDim2.new(1, 0, 0, 38)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "TACTICAL UTILITY PANEL"
-titleLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.TextSize = 16
+titleLabel.Text = "TACTICAL UTILITY"
+titleLabel.TextColor3 = Color3.fromRGB(245, 245, 250)
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 14
 titleLabel.Parent = mainFrame
 
 local subtitle = Instance.new("TextLabel")
-subtitle.Size = UDim2.new(1, 0, 0, 20)
-subtitle.Position = UDim2.new(0, 0, 0, 25)
+subtitle.Size = UDim2.new(1, 0, 0, 15)
+subtitle.Position = UDim2.new(0, 0, 0, 26)
 subtitle.BackgroundTransparency = 1
 subtitle.Text = "[Right Shift] to toggle menu"
-subtitle.TextColor3 = Color3.fromRGB(120, 120, 120)
-subtitle.Font = Enum.Font.SourceSansItalic
-subtitle.TextSize = 12
+subtitle.TextColor3 = Color3.fromRGB(110, 110, 125)
+subtitle.Font = Enum.Font.GothamMedium
+subtitle.TextSize = 11
 subtitle.Parent = mainFrame
 
--- Helper function to create toggles
+-- UI Builder: Toggle Switch
 local function createToggle(name, yPos, callback)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -30, 0, 35)
-    btn.Position = UDim2.new(0, 15, 0, yPos)
-    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    btn.Text = name .. ": OFF"
-    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 14
+    btn.Size = UDim2.new(1, -24, 0, 34)
+    btn.Position = UDim2.new(0, 12, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(28, 28, 35)
+    btn.AutoButtonColor = false
+    btn.Text = ""
     btn.Parent = mainFrame
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
     corner.Parent = btn
 
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -15, 1, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(180, 180, 190)
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = btn
+
+    local statusIndicator = Instance.new("Frame")
+    statusIndicator.Size = UDim2.new(0, 8, 0, 8)
+    statusIndicator.Position = UDim2.new(1, -20, 0.5, -4)
+    statusIndicator.BackgroundColor3 = Color3.fromRGB(90, 90, 100)
+    statusIndicator.Parent = btn
+
+    local indCorner = Instance.new("UICorner")
+    indCorner.CornerRadius = UDim.new(1, 0)
+    indCorner.Parent = statusIndicator
+
     local state = false
     btn.MouseButton1Click:Connect(function()
         state = not state
-        btn.Text = name .. (state and ": ON" > "" and ": ON" or ": ON")
-        btn.TextColor3 = state and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(200, 200, 200)
-        btn.BackgroundColor3 = state and Color3.fromRGB(30, 60, 30) or Color3.fromRGB(40, 40, 40)
+        statusIndicator.BackgroundColor3 = state and Color3.fromRGB(60, 220, 100) or Color3.fromRGB(90, 90, 100)
+        label.TextColor3 = state and Color3.fromRGB(240, 240, 250) or Color3.fromRGB(180, 180, 190)
         callback(state)
     end)
     return btn
 end
 
--- Helper function to create interactive sliders
+-- UI Builder: Responsive Slider
 local function createSlider(name, yPos, minVal, maxVal, defaultVal, callback)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, -24, 0, 42)
+    container.Position = UDim2.new(0, 12, 0, yPos)
+    container.BackgroundTransparency = 1
+    container.Parent = mainFrame
+
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -30, 0, 20)
-    label.Position = UDim2.new(0, 15, 0, yPos)
+    label.Size = UDim2.new(1, 0, 0, 18)
     label.BackgroundTransparency = 1
     label.Text = string.format("%s: %.2f", name, defaultVal)
-    label.TextColor3 = Color3.fromRGB(200, 200, 200)
-    label.Font = Enum.Font.SourceSans
-    label.TextSize = 14
+    label.TextColor3 = Color3.fromRGB(170, 170, 185)
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 11
     label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = mainFrame
+    label.Parent = container
 
     local sliderBg = Instance.new("Frame")
-    sliderBg.Size = UDim2.new(1, -30, 0, 8)
-    sliderBg.Position = UDim2.new(0, 15, 0, yPos + 22)
-    sliderBg.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    sliderBg.Size = UDim2.new(1, 0, 0, 6)
+    sliderBg.Position = UDim2.new(0, 0, 0, 24)
+    sliderBg.BackgroundColor3 = Color3.fromRGB(28, 28, 35)
     sliderBg.BorderSizePixel = 0
-    sliderBg.Parent = mainFrame
+    sliderBg.Parent = container
 
-    local sliderCorner = Instance.new("UICorner")
-    sliderCorner.CornerRadius = UDim.new(1, 0)
-    sliderCorner.Parent = sliderBg
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(1, 0)
+    bgCorner.Parent = sliderBg
 
     local sliderFill = Instance.new("Frame")
     sliderFill.Size = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+    sliderFill.BackgroundColor3 = Color3.fromRGB(90, 140, 255)
     sliderFill.BorderSizePixel = 0
     sliderFill.Parent = sliderBg
 
@@ -138,65 +165,71 @@ local function createSlider(name, yPos, minVal, maxVal, defaultVal, callback)
     fillCorner.Parent = sliderFill
 
     local dragging = false
+    local function updateSlider(input)
+        local posRatio = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        sliderFill.Size = UDim2.new(posRatio, 0, 1, 0)
+        local val = minVal + (posRatio * (maxVal - minVal))
+        label.Text = string.format("%s: %.2f", name, val)
+        callback(val)
+    end
+
     sliderBg.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
+            updateSlider(input)
         end
     end)
 
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
         end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local mousePos = UserInputService:GetMouseLocation().X
-            local absPos = sliderBg.AbsolutePosition.X
-            local absSize = sliderBg.AbsoluteSize.X
-            local posRatio = math.clamp((mousePos - absPos) / absSize, 0, 1)
-            
-            sliderFill.Size = UDim2.new(posRatio, 0, 1, 0)
-            local val = minVal + (posRatio * (maxVal - minVal))
-            label.Text = string.format("%s: %.2f", name, val)
-            callback(val)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateSlider(input)
         end
     end)
 end
 
 --------------------------------------------------------------------
--- 2. HEALTH BAR GUI (HUD)
+-- 2. REWORKED HEALTH BAR HUD
 --------------------------------------------------------------------
 local hudFrame = Instance.new("Frame")
-hudFrame.Size = UDim2.new(0, 220, 0, 22)
-hudFrame.Position = UDim2.new(0.5, -110, 0.85, 0)
-hudFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+hudFrame.Size = UDim2.new(0, 200, 0, 28)
+hudFrame.Position = UDim2.new(0.5, -100, 0.88, 0)
+hudFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 hudFrame.BorderSizePixel = 0
 hudFrame.Visible = false
 hudFrame.Parent = screenGui
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 6)
-corner.Parent = hudFrame
+local hudCorner = Instance.new("UICorner")
+hudCorner.CornerRadius = UDim.new(0, 8)
+hudCorner.Parent = hudFrame
+
+local hudStroke = Instance.new("UIStroke")
+hudStroke.Color = Color3.fromRGB(40, 40, 50)
+hudStroke.Thickness = 1
+hudStroke.Parent = hudFrame
 
 local fill = Instance.new("Frame")
-fill.Size = UDim2.new(1, -4, 1, -4)
-fill.Position = UDim2.new(0, 2, 0, 2)
-fill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+fill.Size = UDim2.new(1, -6, 1, -6)
+fill.Position = UDim2.new(0, 3, 0, 3)
+fill.BackgroundColor3 = Color3.fromRGB(240, 240, 245)
 fill.BorderSizePixel = 0
 fill.Parent = hudFrame
 
 local fillCorner = Instance.new("UICorner")
-fillCorner.CornerRadius = UDim.new(0, 4)
+fillCorner.CornerRadius = UDim.new(0, 6)
 fillCorner.Parent = fill
 
 local textLabelHP = Instance.new("TextLabel")
 textLabelHP.Size = UDim2.new(1, 0, 1, 0)
 textLabelHP.BackgroundTransparency = 1
-textLabelHP.TextColor3 = Color3.fromRGB(0, 0, 0)
-textLabelHP.TextScaled = true
-textLabelHP.Font = Enum.Font.SourceSansBold
+textLabelHP.TextColor3 = Color3.fromRGB(20, 20, 25)
+textLabelHP.Font = Enum.Font.GothamBold
+textLabelHP.TextSize = 11
 textLabelHP.Text = "100 / 100"
 textLabelHP.Parent = hudFrame
 
@@ -210,15 +243,15 @@ local function updateHealthBar()
     local maxHp = humanoid.MaxHealth
     local ratio = maxHp > 0 and (hp / maxHp) or 0
 
-    fill.Size = UDim2.new(ratio, -4, 1, -4)
-    textLabelHP.Text = string.format("%d / %d", math.floor(hp), math.floor(maxHp))
+    fill.Size = UDim2.new(ratio, -6, 1, -6)
+    textLabelHP.Text = string.format("%d / %d HP", math.floor(hp), math.floor(maxHp))
 
     if ratio > 0.75 then
-        fill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        fill.BackgroundColor3 = Color3.fromRGB(230, 230, 240)
     elseif ratio > 0.50 then
-        fill.BackgroundColor3 = Color3.fromRGB(255, 140, 0)
+        fill.BackgroundColor3 = Color3.fromRGB(255, 160, 50)
     else
-        fill.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+        fill.BackgroundColor3 = Color3.fromRGB(255, 70, 70)
     end
 end
 
@@ -229,7 +262,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 --------------------------------------------------------------------
--- 3. PLAYER ESP (WITH ADJUSTABLE TRANSPARENCY)
+-- 3. SUBTLE PLAYER ESP ENGINE
 --------------------------------------------------------------------
 local function clearPlayerESP()
     for _, highlight in pairs(playerHighlights) do
@@ -258,7 +291,7 @@ local function applyPlayerESP(player)
     highlight.Name = "PlayerESP"
     highlight.Adornee = char
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    -- Uses live slider values
+    -- Faint and clean values
     highlight.FillTransparency = espFillTransparency
     highlight.OutlineTransparency = espOutlineTransparency
 
@@ -269,13 +302,13 @@ local function applyPlayerESP(player)
     if classVal and tostring(classVal.Value):lower() == "dread" then
         highlight.FillColor = Color3.fromRGB(255, 140, 0)
     elseif isElite then
-        highlight.FillColor = Color3.fromRGB(0, 255, 0)
+        highlight.FillColor = Color3.fromRGB(0, 255, 120)
     elseif teamName:find("empire") then
-        highlight.FillColor = Color3.fromRGB(255, 50, 50)
+        highlight.FillColor = Color3.fromRGB(255, 80, 80)
     elseif teamName:find("nation") then
-        highlight.FillColor = Color3.fromRGB(50, 150, 255)
+        highlight.FillColor = Color3.fromRGB(80, 160, 255)
     else
-        highlight.FillColor = Color3.fromRGB(255, 0, 0)
+        highlight.FillColor = Color3.fromRGB(220, 60, 60)
     end
 
     highlight.Parent = char
@@ -294,7 +327,7 @@ local function refreshPlayerESP()
 end
 
 --------------------------------------------------------------------
--- 4. SHOCK / ELITE KIT ESP
+-- 4. SHOCK KIT ESP
 --------------------------------------------------------------------
 local function clearKitESP()
     for _, adornment in pairs(kitAdornments) do
@@ -319,73 +352,6 @@ local function refreshKitESP()
                 box.Size = parentPart.Size + Vector3.new(0.2, 0.2, 0.2)
                 box.AlwaysOnTop = true
                 box.ZIndex = 5
-                box.Transparency = 0.4
+                box.Transparency = 0.5
 
-                if parentPart.Name:lower():find("_kit1") or desc.Parent.Name:lower():find("_kit1") then
-                    box.Color3 = Color3.fromRGB(0, 255, 0)
-                else
-                    box.Color3 = Color3.fromRGB(170, 0, 255)
-                end
-
-                box.Parent = parentPart
-                table.insert(kitAdornments, box)
-            end
-        end
-    end
-end
-
---------------------------------------------------------------------
--- 5. BUILD UI CONTROLS (Toggles & Sliders)
---------------------------------------------------------------------
-createToggle("Player ESP", 60, function(state)
-    playerEspEnabled = state
-    refreshPlayerESP()
-end)
-
-createToggle("Kit & HP HUD", 105, function(state)
-    kitAndHpEnabled = state
-    hudFrame.Visible = state
-    refreshKitESP()
-end)
-
-createSlider("ESP Fill Trans", 155, 0, 1, espFillTransparency, function(val)
-    espFillTransparency = val
-    refreshPlayerESP()
-end)
-
-createSlider("ESP Outline Trans", 230, 0, 1, espOutlineTransparency, function(val)
-    espOutlineTransparency = val
-    refreshPlayerESP()
-end)
-
---------------------------------------------------------------------
--- 6. EVENT LISTENERS & HOTKEYS
---------------------------------------------------------------------
-local function setupPlayerListeners(player)
-    player.CharacterAdded:Connect(function()
-        task.wait(0.5)
-        if playerEspEnabled then applyPlayerESP(player) end
-    end)
-    player:GetPropertyChangedSignal("Team"):Connect(function()
-        if playerEspEnabled then refreshPlayerESP() end
-    end)
-end
-
-Players.PlayerAdded:Connect(setupPlayerListeners)
-for _, player in ipairs(Players:GetPlayers()) do
-    if player ~= LocalPlayer then
-        setupPlayerListeners(player)
-    end
-end
-
-LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-    if playerEspEnabled then refreshPlayerESP() end
-end)
-
--- Menu Toggle Hotkey (Right Shift)
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if input.KeyCode == Enum.KeyCode.RightShift then
-        menuVisible = not menuVisible
-        mainFrame.Visible = menuVisible
-    end
-end)
+                if
